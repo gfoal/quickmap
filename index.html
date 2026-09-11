@@ -1,0 +1,592 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Coordinate Mapper</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<script src="https://cdn.jsdelivr.net/npm/mgrs@2.2.0/dist/mgrs.min.js"></script>
+
+<style>
+  :root{
+    --bg:            #10151a;
+    --panel:         #161d24;
+    --panel-raised:  #1c242c;
+    --border:        #2a333c;
+    --text:          #e7ecf0;
+    --text-muted:    #8b98a5;
+    --text-faint:    #5c6875;
+    --accent:        #eab04d;
+    --accent-dim:    #eab04d33;
+    --danger:        #c7614f;
+    --danger-dim:    #c7614f26;
+    --ok:            #4fae7d;
+    --radius:        3px;
+    --font-ui:       'Inter', -apple-system, sans-serif;
+    --font-mono:     'JetBrains Mono', ui-monospace, monospace;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-ui);
+  }
+
+  body {
+    display: flex;
+    overflow: hidden;
+  }
+
+  /* ---------- Sidebar ---------- */
+
+  #sidebar {
+    width: 360px;
+    min-width: 360px;
+    height: 100vh;
+    background: var(--panel);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  #sidebar-scroll {
+    flex: 1 1 auto;
+    overflow-y: auto;
+    padding: 22px 20px 12px;
+  }
+
+  header.app-header {
+    padding: 0 0 18px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 20px;
+  }
+
+  header.app-header h1 {
+    font-size: 15px;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    margin: 0 0 4px;
+  }
+
+  header.app-header p {
+    font-size: 12.5px;
+    color: var(--text-muted);
+    margin: 0;
+    line-height: 1.5;
+  }
+
+  .field {
+    margin-bottom: 16px;
+  }
+
+  .field label {
+    display: block;
+    font-size: 11.5px;
+    font-weight: 500;
+    color: var(--text-muted);
+    margin-bottom: 6px;
+  }
+
+  .field .hint {
+    font-size: 11px;
+    color: var(--text-faint);
+    margin-top: 5px;
+    line-height: 1.4;
+  }
+
+  select, textarea, input[type="text"] {
+    width: 100%;
+    background: var(--panel-raised);
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: var(--radius);
+    padding: 8px 10px;
+    font-size: 13px;
+    font-family: var(--font-ui);
+    outline: none;
+    transition: border-color 0.12s ease;
+  }
+
+  select:focus, textarea:focus, input[type="text"]:focus {
+    border-color: var(--accent);
+  }
+
+  textarea {
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    line-height: 1.55;
+    resize: vertical;
+    min-height: 140px;
+  }
+
+  select {
+    appearance: none;
+    -webkit-appearance: none;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path d='M0 0L5 6L10 0Z' fill='%238b98a5'/></svg>");
+    background-repeat: no-repeat;
+    background-position: right 10px center;
+    padding-right: 28px;
+    cursor: pointer;
+  }
+
+  .color-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .color-row select {
+    flex: 1;
+  }
+
+  .swatch {
+    width: 34px;
+    height: 34px;
+    min-width: 34px;
+    border-radius: var(--radius);
+    border: 1px solid var(--border);
+    box-shadow: inset 0 0 0 1px rgba(0,0,0,0.25);
+  }
+
+  .btn-row {
+    display: flex;
+    gap: 10px;
+    margin-top: 4px;
+    margin-bottom: 14px;
+  }
+
+  button {
+    font-family: var(--font-ui);
+    font-size: 13px;
+    font-weight: 600;
+    border-radius: var(--radius);
+    border: 1px solid transparent;
+    padding: 10px 14px;
+    cursor: pointer;
+    transition: filter 0.12s ease, background 0.12s ease;
+  }
+
+  button:active { filter: brightness(0.92); }
+
+  #addBtn {
+    flex: 1;
+    background: var(--accent);
+    color: #1a1305;
+  }
+
+  #addBtn:hover { filter: brightness(1.07); }
+
+  #clearBtn {
+    background: transparent;
+    color: var(--text-muted);
+    border-color: var(--border);
+  }
+
+  #clearBtn:hover {
+    color: var(--danger);
+    border-color: var(--danger);
+  }
+
+  #status {
+    font-size: 12px;
+    line-height: 1.5;
+    padding: 9px 11px;
+    border-radius: var(--radius);
+    margin-bottom: 18px;
+    display: none;
+  }
+
+  #status.show { display: block; }
+  #status.ok    { background: var(--danger-dim); color: var(--danger); background: #4fae7d1f; color: var(--ok); }
+  #status.warn  { background: #eab04d1f; color: var(--accent); }
+  #status.error { background: var(--danger-dim); color: var(--danger); }
+
+  /* ---------- Legend ---------- */
+
+  .legend-heading {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    font-size: 11.5px;
+    font-weight: 500;
+    color: var(--text-muted);
+    padding-top: 6px;
+    border-top: 1px solid var(--border);
+    margin-bottom: 10px;
+  }
+
+  .legend-heading span.count {
+    color: var(--text-faint);
+    font-family: var(--font-mono);
+    font-size: 11px;
+  }
+
+  #legendEmpty {
+    font-size: 12px;
+    color: var(--text-faint);
+    padding: 6px 0 10px;
+    line-height: 1.5;
+  }
+
+  .legend-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 9px 8px;
+    border-radius: var(--radius);
+    margin-bottom: 4px;
+  }
+
+  .legend-item:hover {
+    background: var(--panel-raised);
+  }
+
+  .legend-dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    margin-top: 3px;
+    flex-shrink: 0;
+    box-shadow: 0 0 0 1px rgba(0,0,0,0.3);
+  }
+
+  .legend-body {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .legend-label {
+    font-size: 12.5px;
+    font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .legend-meta {
+    font-size: 11px;
+    font-family: var(--font-mono);
+    color: var(--text-faint);
+    margin-top: 2px;
+  }
+
+  .legend-remove {
+    background: none;
+    border: none;
+    color: var(--text-faint);
+    font-size: 15px;
+    line-height: 1;
+    padding: 2px 4px;
+    font-weight: 400;
+  }
+
+  .legend-remove:hover { color: var(--danger); }
+
+  /* ---------- Map ---------- */
+
+  #map {
+    flex: 1;
+    height: 100vh;
+  }
+
+  .leaflet-container {
+    background: #0c0f12;
+    font-family: var(--font-ui);
+  }
+
+  /* scrollbar */
+  #sidebar-scroll::-webkit-scrollbar { width: 8px; }
+  #sidebar-scroll::-webkit-scrollbar-track { background: transparent; }
+  #sidebar-scroll::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+  @media (max-width: 760px) {
+    body { flex-direction: column; overflow: auto; }
+    #sidebar { width: 100%; min-width: 0; height: auto; max-height: 52vh; border-right: none; border-bottom: 1px solid var(--border); }
+    #map { height: 48vh; }
+  }
+</style>
+</head>
+<body>
+
+<div id="sidebar">
+  <div id="sidebar-scroll">
+    <header class="app-header">
+      <h1>Coordinate Mapper</h1>
+      <p>Paste a list of coordinates, pick a color, and plot them as a layer on the satellite map.</p>
+    </header>
+
+    <div class="field">
+      <label for="formatSelect">Coordinate format</label>
+      <select id="formatSelect">
+        <option value="latlon">Lat, Lon (decimal degrees)</option>
+        <option value="mgrs">MGRS</option>
+      </select>
+    </div>
+
+    <div class="field">
+      <label for="coordsInput">Coordinates (one per line)</label>
+      <textarea id="coordsInput" placeholder="48.8566, 2.3522&#10;51.5074, -0.1278&#10;40.7128, -74.0060"></textarea>
+      <div class="hint" id="formatHint">One pair per line, e.g. 48.8566, 2.3522 — comma or space separated.</div>
+    </div>
+
+    <div class="field">
+      <label for="colorSelect">Dot color</label>
+      <div class="color-row">
+        <select id="colorSelect"></select>
+        <div class="swatch" id="colorSwatch"></div>
+      </div>
+    </div>
+
+    <div class="field">
+      <label for="labelInput">Label (optional)</label>
+      <input type="text" id="labelInput" placeholder="e.g. Recon team, 12 Sep">
+    </div>
+
+    <div class="btn-row">
+      <button id="addBtn">Add</button>
+      <button id="clearBtn">Clear all</button>
+    </div>
+
+    <div id="status"></div>
+
+    <div class="legend-heading">
+      <span>Layers</span>
+      <span class="count" id="layerCount">0</span>
+    </div>
+    <div id="legendEmpty">No layers yet. Add a batch of coordinates above to see it here.</div>
+    <div id="legendList"></div>
+  </div>
+</div>
+
+<div id="map"></div>
+
+<script>
+(function () {
+
+  // ---------- Color presets ----------
+  var COLORS = [
+    { name: 'Amber',    hex: '#eab04d' },
+    { name: 'Crimson',  hex: '#e0574a' },
+    { name: 'Emerald',  hex: '#3fbd7d' },
+    { name: 'Sky',      hex: '#4aa8e0' },
+    { name: 'Violet',   hex: '#a479dd' },
+    { name: 'Magenta',  hex: '#e065a3' },
+    { name: 'White',    hex: '#f2f2f2' },
+    { name: 'Graphite', hex: '#9aa7b3' }
+  ];
+
+  var colorSelect = document.getElementById('colorSelect');
+  var colorSwatch = document.getElementById('colorSwatch');
+  COLORS.forEach(function (c) {
+    var opt = document.createElement('option');
+    opt.value = c.hex;
+    opt.textContent = c.name;
+    colorSelect.appendChild(opt);
+  });
+  function syncSwatch() { colorSwatch.style.background = colorSelect.value; }
+  colorSelect.addEventListener('change', syncSwatch);
+  syncSwatch();
+
+  // ---------- Format hint ----------
+  var formatSelect = document.getElementById('formatSelect');
+  var formatHint = document.getElementById('formatHint');
+  var coordsInput = document.getElementById('coordsInput');
+  var HINTS = {
+    latlon: 'One pair per line, e.g. 48.8566, 2.3522 — comma or space separated.',
+    mgrs: 'One grid reference per line, e.g. 31UDQ4826011932'
+  };
+  var PLACEHOLDERS = {
+    latlon: '48.8566, 2.3522\n51.5074, -0.1278\n40.7128, -74.0060',
+    mgrs: '31UDQ4826011932\n30UXC9998099998\n18TWL8809307014'
+  };
+  formatSelect.addEventListener('change', function () {
+    formatHint.textContent = HINTS[formatSelect.value];
+    coordsInput.placeholder = PLACEHOLDERS[formatSelect.value];
+  });
+
+  // ---------- Map ----------
+  var map = L.map('map', { preferCanvas: true, zoomControl: true }).setView([20, 10], 3);
+
+  L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+    maxZoom: 19,
+    attribution: 'Tiles &copy; Esri &mdash; Source: Esri, Maxar, Earthstar Geographics'
+  }).addTo(map);
+
+  L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', {
+    maxZoom: 19,
+    opacity: 0.85
+  }).addTo(map);
+
+  // ---------- Parsing ----------
+  function parseLatLonLine(line) {
+    var parts = line.trim().split(/[,\s]+/).filter(Boolean);
+    if (parts.length !== 2) return null;
+    var lat = parseFloat(parts[0]);
+    var lon = parseFloat(parts[1]);
+    if (isNaN(lat) || isNaN(lon)) return null;
+    if (lat < -90 || lat > 90 || lon < -180 || lon > 180) return null;
+    return [lat, lon];
+  }
+
+  function parseMgrsLine(line) {
+    var clean = line.trim().replace(/\s+/g, '').toUpperCase();
+    if (!clean) return null;
+    try {
+      var point = mgrs.toPoint(clean); // [lon, lat]
+      return [point[1], point[0]];
+    } catch (e) {
+      return null;
+    }
+  }
+
+  // ---------- Layers state ----------
+  var layers = [];
+  var layerIdCounter = 0;
+
+  var legendList = document.getElementById('legendList');
+  var legendEmpty = document.getElementById('legendEmpty');
+  var layerCountEl = document.getElementById('layerCount');
+  var statusEl = document.getElementById('status');
+
+  function showStatus(message, type) {
+    statusEl.textContent = message;
+    statusEl.className = 'show ' + type;
+  }
+  function hideStatus() {
+    statusEl.className = '';
+  }
+
+  function renderLegend() {
+    legendList.innerHTML = '';
+    layerCountEl.textContent = layers.length;
+    legendEmpty.style.display = layers.length === 0 ? 'block' : 'none';
+
+    layers.forEach(function (layer) {
+      var item = document.createElement('div');
+      item.className = 'legend-item';
+
+      var dot = document.createElement('div');
+      dot.className = 'legend-dot';
+      dot.style.background = layer.color;
+
+      var body = document.createElement('div');
+      body.className = 'legend-body';
+
+      var label = document.createElement('div');
+      label.className = 'legend-label';
+      label.textContent = layer.label;
+
+      var meta = document.createElement('div');
+      meta.className = 'legend-meta';
+      meta.textContent = layer.count + (layer.count === 1 ? ' point' : ' points') +
+        (layer.skipped ? '  ·  ' + layer.skipped + ' skipped' : '');
+
+      body.appendChild(label);
+      body.appendChild(meta);
+
+      var removeBtn = document.createElement('button');
+      removeBtn.className = 'legend-remove';
+      removeBtn.textContent = '\u00D7';
+      removeBtn.title = 'Remove this layer';
+      removeBtn.addEventListener('click', function () {
+        map.removeLayer(layer.group);
+        layers = layers.filter(function (l) { return l.id !== layer.id; });
+        renderLegend();
+      });
+
+      item.appendChild(dot);
+      item.appendChild(body);
+      item.appendChild(removeBtn);
+      legendList.appendChild(item);
+    });
+  }
+
+  document.getElementById('addBtn').addEventListener('click', function () {
+    var rawLines = coordsInput.value.split(/\r?\n/).map(function (l) { return l.trim(); }).filter(Boolean);
+
+    if (rawLines.length === 0) {
+      showStatus('Paste at least one coordinate first.', 'error');
+      return;
+    }
+
+    var format = formatSelect.value;
+    var parser = format === 'mgrs' ? parseMgrsLine : parseLatLonLine;
+
+    var points = [];
+    var skipped = 0;
+    rawLines.forEach(function (line) {
+      var p = parser(line);
+      if (p) points.push(p); else skipped++;
+    });
+
+    if (points.length === 0) {
+      showStatus('None of those lines could be parsed as ' + (format === 'mgrs' ? 'MGRS' : 'lat/lon') + '. Check the format and try again.', 'error');
+      return;
+    }
+
+    var color = colorSelect.value;
+    var label = document.getElementById('labelInput').value.trim();
+    layerIdCounter += 1;
+    if (!label) label = 'Layer ' + layerIdCounter;
+
+    var group = L.layerGroup();
+    points.forEach(function (p) {
+      L.circleMarker(p, {
+        radius: 6,
+        weight: 1.5,
+        color: '#0c0f12',
+        fillColor: color,
+        fillOpacity: 0.9
+      }).addTo(group);
+    });
+    group.addTo(map);
+
+    layers.push({
+      id: layerIdCounter,
+      color: color,
+      label: label,
+      count: points.length,
+      skipped: skipped,
+      group: group
+    });
+
+    renderLegend();
+
+    if (skipped > 0) {
+      showStatus('Added ' + points.length + (points.length === 1 ? ' point' : ' points') + ' — ' + skipped + ' line' + (skipped === 1 ? '' : 's') + ' skipped (invalid format).', 'warn');
+    } else {
+      showStatus('Added ' + points.length + (points.length === 1 ? ' point' : ' points') + ' to "' + label + '".', 'ok');
+    }
+
+    coordsInput.value = '';
+    document.getElementById('labelInput').value = '';
+  });
+
+  document.getElementById('clearBtn').addEventListener('click', function () {
+    layers.forEach(function (layer) { map.removeLayer(layer.group); });
+    layers = [];
+    layerIdCounter = 0;
+    renderLegend();
+    hideStatus();
+  });
+
+  // init hint text
+  formatHint.textContent = HINTS.latlon;
+
+}());
+</script>
+
+</body>
+</html>
