@@ -317,6 +317,25 @@
     font-family: var(--font-ui);
   }
 
+  .place-label-icon {
+    background: none;
+    border: none;
+    pointer-events: none;
+  }
+
+  .place-label {
+    display: inline-block;
+    font-size: 12px;
+    font-weight: 500;
+    color: #f2f4f6;
+    background: rgba(10, 13, 16, 0.55);
+    padding: 2px 6px;
+    border-radius: 2px;
+    white-space: nowrap;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.6);
+    transform: translate(-50%, -50%);
+  }
+
   /* scrollbar */
   #sidebar-scroll::-webkit-scrollbar { width: 8px; }
   #sidebar-scroll::-webkit-scrollbar-track { background: transparent; }
@@ -385,14 +404,15 @@
 
   // ---------- Color presets ----------
   var COLORS = [
-    { name: 'Amber',    hex: '#eab04d' },
-    { name: 'Crimson',  hex: '#e0574a' },
-    { name: 'Emerald',  hex: '#3fbd7d' },
-    { name: 'Sky',      hex: '#4aa8e0' },
-    { name: 'Violet',   hex: '#a479dd' },
-    { name: 'Magenta',  hex: '#e065a3' },
-    { name: 'White',    hex: '#f2f2f2' },
-    { name: 'Graphite', hex: '#9aa7b3' }
+    { name: 'Red',    hex: '#ff3b30' },
+    { name: 'Orange', hex: '#ff9500' },
+    { name: 'Yellow', hex: '#ffd60a' },
+    { name: 'Green',  hex: '#34d058' },
+    { name: 'Teal',   hex: '#00d3c8' },
+    { name: 'Blue',   hex: '#0a84ff' },
+    { name: 'Purple', hex: '#af52de' },
+    { name: 'Pink',   hex: '#ff375f' },
+    { name: 'White',  hex: '#ffffff' }
   ];
 
   var colorGrid = document.getElementById('colorGrid');
@@ -442,14 +462,62 @@
     attribution: 'Tiles &copy; Esri &mdash; Source: Esri, Maxar, Earthstar Geographics'
   }).addTo(map);
 
-  // Label-only overlay sourced from OpenStreetMap data, which renders each
-  // place's local name (e.g. Ukrainian/Cyrillic) rather than an English form.
-  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_only_labels/{z}/{x}/{y}{r}.png', {
-    maxZoom: 19,
-    subdomains: 'abcd',
-    opacity: 0.9,
-    attribution: '&copy; OpenStreetMap contributors &copy; CARTO'
-  }).addTo(map);
+  // ---------- Place labels (forced Ukrainian) ----------
+  // Pre-rendered basemap label tiles can't be forced into a specific language,
+  // so instead we query OpenStreetMap's raw data for place names in view and
+  // render our own labels, preferring the Ukrainian name tag explicitly.
+  var placeLabels = L.layerGroup().addTo(map);
+  var placeFetchTimer = null;
+  var placeFetchController = null;
+
+  function escapeHtml(str) {
+    return str.replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+
+  function fetchPlaceLabels() {
+    var zoom = map.getZoom();
+    placeLabels.clearLayers();
+    if (zoom < 8) return; // too zoomed out — would pull in a huge/unfocused result set
+
+    var b = map.getBounds();
+    var placeTypes = zoom >= 12 ? 'city|town|village|hamlet' : (zoom >= 10 ? 'city|town|village' : 'city|town');
+    var query = '[out:json][timeout:20];node["place"~"' + placeTypes + '"](' +
+      b.getSouth() + ',' + b.getWest() + ',' + b.getNorth() + ',' + b.getEast() + ');out body;';
+
+    if (placeFetchController) placeFetchController.abort();
+    placeFetchController = ('AbortController' in window) ? new AbortController() : null;
+
+    fetch('https://overpass-api.de/api/interpreter', {
+      method: 'POST',
+      body: 'data=' + encodeURIComponent(query),
+      signal: placeFetchController ? placeFetchController.signal : undefined
+    })
+      .then(function (res) { return res.json(); })
+      .then(function (data) {
+        (data.elements || []).forEach(function (el) {
+          var tags = el.tags || {};
+          var name = tags['name:uk'] || tags['name:uk-UA'] || tags['name'];
+          if (!name) return;
+          var icon = L.divIcon({
+            className: 'place-label-icon',
+            html: '<span class="place-label">' + escapeHtml(name) + '</span>',
+            iconSize: null
+          });
+          L.marker([el.lat, el.lon], { icon: icon, interactive: false, keyboard: false }).addTo(placeLabels);
+        });
+      })
+      .catch(function () { /* network hiccup or aborted — labels just stay empty until next move */ });
+  }
+
+  function schedulePlaceLabelFetch() {
+    clearTimeout(placeFetchTimer);
+    placeFetchTimer = setTimeout(fetchPlaceLabels, 450);
+  }
+
+  map.on('moveend', schedulePlaceLabelFetch);
+  fetchPlaceLabels();
 
   // ---------- Parsing ----------
   function parseLatLonLine(line) {
