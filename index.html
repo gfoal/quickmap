@@ -63,8 +63,29 @@
 
   #sidebar-scroll {
     flex: 1 1 auto;
+    min-height: 0;
     overflow-y: auto;
-    padding: 22px 20px 12px;
+    padding: 22px 20px 16px;
+  }
+
+  #legend-panel {
+    flex: 0 0 auto;
+    max-height: 42vh;
+    display: flex;
+    flex-direction: column;
+    background: var(--panel-raised);
+    border-top: 1px solid var(--border);
+    padding: 14px 20px 16px;
+  }
+
+  #legend-panel .legend-heading {
+    border-top: none;
+    padding-top: 0;
+  }
+
+  #legendList {
+    overflow-y: auto;
+    min-height: 0;
   }
 
   header.app-header {
@@ -337,9 +358,9 @@
   }
 
   /* scrollbar */
-  #sidebar-scroll::-webkit-scrollbar { width: 8px; }
-  #sidebar-scroll::-webkit-scrollbar-track { background: transparent; }
-  #sidebar-scroll::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+  #sidebar-scroll::-webkit-scrollbar, #legendList::-webkit-scrollbar { width: 8px; }
+  #sidebar-scroll::-webkit-scrollbar-track, #legendList::-webkit-scrollbar-track { background: transparent; }
+  #sidebar-scroll::-webkit-scrollbar-thumb, #legendList::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
 
   @media (max-width: 760px) {
     body { flex-direction: column; overflow: auto; }
@@ -358,17 +379,9 @@
     </header>
 
     <div class="field">
-      <label for="formatSelect">Coordinate format</label>
-      <select id="formatSelect">
-        <option value="latlon">Lat, Lon (decimal degrees)</option>
-        <option value="mgrs">MGRS</option>
-      </select>
-    </div>
-
-    <div class="field">
       <label for="coordsInput">Coordinates (one per line)</label>
       <textarea id="coordsInput" placeholder="48.8566, 2.3522&#10;51.5074, -0.1278&#10;40.7128, -74.0060"></textarea>
-      <div class="hint" id="formatHint">One pair per line, e.g. 48.8566, 2.3522 — comma or space separated.</div>
+      <div class="hint" id="formatHint">One per line — lat/lon (e.g. 48.8566, 2.3522) or MGRS (e.g. 31UDQ4826011932). Format is auto-detected; don't mix both in the same list.</div>
     </div>
 
     <div class="field">
@@ -387,7 +400,9 @@
     </div>
 
     <div id="status"></div>
+  </div>
 
+  <div id="legend-panel">
     <div class="legend-heading">
       <span>Layers</span>
       <span class="count" id="layerCount">0</span>
@@ -437,22 +452,7 @@
     colorGrid.appendChild(btn);
   });
 
-  // ---------- Format hint ----------
-  var formatSelect = document.getElementById('formatSelect');
-  var formatHint = document.getElementById('formatHint');
   var coordsInput = document.getElementById('coordsInput');
-  var HINTS = {
-    latlon: 'One pair per line, e.g. 48.8566, 2.3522 — comma or space separated.',
-    mgrs: 'One grid reference per line, e.g. 31UDQ4826011932'
-  };
-  var PLACEHOLDERS = {
-    latlon: '48.8566, 2.3522\n51.5074, -0.1278\n40.7128, -74.0060',
-    mgrs: '31UDQ4826011932\n30UXC9998099998\n18TWL8809307014'
-  };
-  formatSelect.addEventListener('change', function () {
-    formatHint.textContent = HINTS[formatSelect.value];
-    coordsInput.placeholder = PLACEHOLDERS[formatSelect.value];
-  });
 
   // ---------- Map ----------
   var map = L.map('map', { preferCanvas: true, zoomControl: true }).setView([48.54891337417761, 37.29038582969246], 12);
@@ -541,6 +541,31 @@
     }
   }
 
+  // ---------- Format auto-detection ----------
+  // Lat/lon lines look like "48.5489, 37.2904": two decimal numbers,
+  // comma/space separated, optionally signed. MGRS lines look like
+  // "31UDQ4826011932": a zone number, three letters, then digits only —
+  // no decimal point, no comma. Checking the first classifiable line in the
+  // pasted batch is enough since a single list shouldn't mix both formats.
+  var LATLON_LINE_RE = /^-?\d{1,3}(\.\d+)?[,\s]+-?\d{1,3}(\.\d+)?$/;
+  var MGRS_LINE_RE = /^\d{1,2}[A-Za-z]{3}\d{0,10}$/;
+
+  function detectLineFormat(line) {
+    var t = line.trim();
+    if (!t) return null;
+    if (LATLON_LINE_RE.test(t)) return 'latlon';
+    if (MGRS_LINE_RE.test(t.replace(/\s+/g, ''))) return 'mgrs';
+    return null;
+  }
+
+  function detectBatchFormat(lines) {
+    for (var i = 0; i < lines.length; i++) {
+      var f = detectLineFormat(lines[i]);
+      if (f) return f;
+    }
+    return null;
+  }
+
   // ---------- Layers state ----------
   var layers = [];
   var layerIdCounter = 0;
@@ -611,7 +636,11 @@
       return;
     }
 
-    var format = formatSelect.value;
+    var format = detectBatchFormat(rawLines);
+    if (!format) {
+      showStatus('Could not tell if that\u2019s lat/lon or MGRS \u2014 check the formatting and try again.', 'error');
+      return;
+    }
     var parser = format === 'mgrs' ? parseMgrsLine : parseLatLonLine;
 
     var points = [];
@@ -671,9 +700,6 @@
     renderLegend();
     hideStatus();
   });
-
-  // init hint text
-  formatHint.textContent = HINTS.latlon;
 
 }());
 </script>
