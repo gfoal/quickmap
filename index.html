@@ -492,15 +492,20 @@ var UA_PLACES = [[44.41667,34.05,"Алупка"],[45,34,"Автономна Ре
     attribution: 'Tiles &copy; Esri &mdash; Source: Esri, Maxar, Earthstar Geographics'
   }).addTo(map);
 
-  // ---------- Place labels (forced Ukrainian, bundled offline) ----------
+  // ---------- Place labels (forced Ukrainian, bundled + live fallback) ----------
   // Pre-rendered basemap label tiles can't be forced into a specific
-  // language, and querying OpenStreetMap live was too slow. Instead we ship
-  // a small bundled dataset of Ukrainian settlements (city/town/larger
-  // village level, MIT-licensed, sourced from GeoNames via
-  // github.com/AeroKir/places-in-Ukraine) and filter it client-side —
-  // instant, no network round-trip, works offline. It won't include every
-  // tiny hamlet the way a live query would.
+  // language. A live OpenStreetMap query alone was too slow, but a fully
+  // offline dataset has gaps (a fixed list can't cover every hamlet, and
+  // some areas — like farmland between towns — simply have no bundled
+  // point nearby). So: render the bundled dataset instantly (covers most
+  // views with zero delay), then quietly check OpenStreetMap in the
+  // background for anything the bundled list missed in the current view,
+  // adding those in a moment later without blocking or re-flashing what's
+  // already shown.
   var placeLabels = L.layerGroup().addTo(map);
+  var shownCoords = []; // [lat, lon] of labels already placed this render, for de-duping the live fill-in
+  var liveFetchTimer = null;
+  var liveFetchController = null;
 
   function escapeHtml(str) {
     return str.replace(/[&<>"']/g, function (c) {
@@ -508,8 +513,29 @@ var UA_PLACES = [[44.41667,34.05,"Алупка"],[45,34,"Автономна Ре
     });
   }
 
+  function addLabelMarker(lat, lon, name) {
+    var icon = L.divIcon({
+      className: 'place-label-icon',
+      html: '<span class="place-label">' + escapeHtml(name) + '</span>',
+      iconSize: null
+    });
+    L.marker([lat, lon], { icon: icon, interactive: false, keyboard: false }).addTo(placeLabels);
+    shownCoords.push([lat, lon]);
+  }
+
+  function isNearShown(lat, lon) {
+    for (var i = 0; i < shownCoords.length; i++) {
+      if (Math.abs(shownCoords[i][0] - lat) < 0.01 && Math.abs(shownCoords[i][1] - lon) < 0.01) return true;
+    }
+    return false;
+  }
+
   function renderPlaceLabels() {
     placeLabels.clearLayers();
+    shownCoords = [];
+    clearTimeout(liveFetchTimer);
+    if (liveFetchController) liveFetchController.abort();
+
     var zoom = map.getZoom();
     if (zoom < 7) return; // too zoomed out — would clutter with the whole country
 
@@ -518,15 +544,38 @@ var UA_PLACES = [[44.41667,34.05,"Алупка"],[45,34,"Автономна Ре
 
     for (var i = 0; i < UA_PLACES.length; i++) {
       var p = UA_PLACES[i];
-      var lat = p[0], lon = p[1], name = p[2];
-      if (lat < south || lat > north || lon < west || lon > east) continue;
-      var icon = L.divIcon({
-        className: 'place-label-icon',
-        html: '<span class="place-label">' + escapeHtml(name) + '</span>',
-        iconSize: null
-      });
-      L.marker([lat, lon], { icon: icon, interactive: false, keyboard: false }).addTo(placeLabels);
+      if (p[0] < south || p[0] > north || p[1] < west || p[1] > east) continue;
+      addLabelMarker(p[0], p[1], p[2]);
     }
+
+    if (zoom >= 8) {
+      liveFetchTimer = setTimeout(function () { fetchLiveFillIn(south, west, north, east, zoom); }, 400);
+    }
+  }
+
+  function fetchLiveFillIn(south, west, north, east, zoom) {
+    var placeTypes = zoom >= 12 ? 'city|town|village|hamlet' : (zoom >= 10 ? 'city|town|village' : 'city|town');
+    var query = '[out:json][timeout:15];node["place"~"' + placeTypes + '"](' +
+      south + ',' + west + ',' + north + ',' + east + ');out body;';
+
+    liveFetchController = ('AbortController' in window) ? new AbortController() : null;
+
+    fetch('https://overpass-api.de/api/interpreter', {
+      method: 'POST',
+      body: 'data=' + encodeURIComponent(query),
+      signal: liveFetchController ? liveFetchController.signal : undefined
+    })
+      .then(function (res) { return res.json(); })
+      .then(function (data) {
+        (data.elements || []).forEach(function (el) {
+          var tags = el.tags || {};
+          var name = tags['name:uk'] || tags['name:uk-UA'] || tags['name'];
+          if (!name) return;
+          if (isNearShown(el.lat, el.lon)) return; // already covered by the bundled dataset
+          addLabelMarker(el.lat, el.lon, name);
+        });
+      })
+      .catch(function () { /* network hiccup — bundled labels already shown, nothing lost */ });
   }
 
   map.on('moveend', renderPlaceLabels);
