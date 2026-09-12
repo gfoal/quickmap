@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="uk">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Coordinate Mapper</title>
+<title>Карта координат</title>
 
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -68,24 +68,39 @@
     padding: 22px 20px 16px;
   }
 
-  #legend-panel {
-    flex: 0 0 auto;
-    max-height: 42vh;
-    display: flex;
-    flex-direction: column;
-    background: var(--panel-raised);
-    border-top: 1px solid var(--border);
-    padding: 14px 20px 16px;
-  }
-
-  #legend-panel .legend-heading {
-    border-top: none;
-    padding-top: 0;
-  }
-
   #legendList {
     overflow-y: auto;
     min-height: 0;
+  }
+
+  /* ---------- Map + floating legend ---------- */
+
+  #map-wrap {
+    position: relative;
+    flex: 1;
+    height: 100vh;
+  }
+
+  #legend-overlay {
+    position: absolute;
+    top: 16px;
+    right: 16px;
+    z-index: 1000;
+    width: 210px;
+    max-height: calc(100vh - 32px);
+    display: flex;
+    flex-direction: column;
+    background: rgba(19, 24, 29, 0.88);
+    backdrop-filter: blur(6px);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 12px 12px 8px;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.35);
+  }
+
+  #legend-overlay .legend-heading {
+    border-top: none;
+    padding-top: 0;
   }
 
   header.app-header {
@@ -275,19 +290,19 @@
   .legend-item {
     display: flex;
     align-items: flex-start;
-    gap: 10px;
-    padding: 9px 8px;
+    gap: 8px;
+    padding: 7px 6px;
     border-radius: var(--radius);
-    margin-bottom: 4px;
+    margin-bottom: 2px;
   }
 
   .legend-item:hover {
-    background: var(--panel-raised);
+    background: rgba(255,255,255,0.04);
   }
 
   .legend-dot {
-    width: 12px;
-    height: 12px;
+    width: 11px;
+    height: 11px;
     border-radius: 50%;
     margin-top: 3px;
     flex-shrink: 0;
@@ -300,7 +315,7 @@
   }
 
   .legend-label {
-    font-size: 12.5px;
+    font-size: 12px;
     font-weight: 500;
     white-space: nowrap;
     overflow: hidden;
@@ -308,20 +323,27 @@
   }
 
   .legend-meta {
-    font-size: 11px;
+    font-size: 10.5px;
     font-family: var(--font-mono);
     color: var(--text-faint);
-    margin-top: 2px;
+    margin-top: 1px;
   }
 
   .legend-remove {
     background: none;
     border: none;
     color: var(--text-faint);
-    font-size: 15px;
+    font-size: 14px;
     line-height: 1;
     padding: 2px 4px;
     font-weight: 400;
+    opacity: 0;
+    transition: opacity 0.12s ease;
+  }
+
+  .legend-item:hover .legend-remove,
+  .legend-remove:focus-visible {
+    opacity: 1;
   }
 
   .legend-remove:hover { color: var(--danger); }
@@ -329,8 +351,8 @@
   /* ---------- Map ---------- */
 
   #map {
-    flex: 1;
-    height: 100vh;
+    position: absolute;
+    inset: 0;
   }
 
   .leaflet-container {
@@ -365,7 +387,8 @@
   @media (max-width: 760px) {
     body { flex-direction: column; overflow: auto; }
     #sidebar { width: 100%; min-width: 0; height: auto; max-height: 52vh; border-right: none; border-bottom: 1px solid var(--border); }
-    #map { height: 48vh; }
+    #map-wrap { height: 48vh; }
+    #legend-overlay { width: 170px; max-height: calc(48vh - 24px); }
   }
 </style>
 </head>
@@ -374,60 +397,62 @@
 <div id="sidebar">
   <div id="sidebar-scroll">
     <header class="app-header">
-      <h1>Coordinate Mapper</h1>
-      <p>Paste a list of coordinates, pick a color, and plot them as a layer on the satellite map.</p>
+      <h1>Карта координат</h1>
+      <p>Вставте список координат, оберіть колір і нанесіть їх шаром на супутникову карту.</p>
     </header>
 
     <div class="field">
-      <label for="coordsInput">Coordinates (one per line)</label>
+      <label for="coordsInput">Координати (по одній на рядок)</label>
       <textarea id="coordsInput" placeholder="48.8566, 2.3522&#10;51.5074, -0.1278&#10;40.7128, -74.0060"></textarea>
-      <div class="hint" id="formatHint">One per line — lat/lon (e.g. 48.8566, 2.3522) or MGRS (e.g. 31UDQ4826011932). Format is auto-detected; don't mix both in the same list.</div>
+      <div class="hint" id="formatHint">Можна вставляти координати в обох форматах: десяткові градуси (напр. 48.8566, 2.3522) або MGRS (напр. 31UDQ4826011932). Формат визначається автоматично — не змішуйте обидва в одному списку.</div>
     </div>
 
     <div class="field">
-      <label id="colorLabel">Dot color</label>
+      <label id="colorLabel">Колір точок</label>
       <div class="color-grid" id="colorGrid" role="radiogroup" aria-labelledby="colorLabel"></div>
     </div>
 
     <div class="field">
-      <label for="labelInput">Label (optional)</label>
-      <input type="text" id="labelInput" placeholder="e.g. Recon team, 12 Sep">
+      <label for="labelInput">Підпис (необов'язково)</label>
+      <input type="text" id="labelInput" placeholder="напр. Розвідгрупа, 12 вер">
     </div>
 
     <div class="btn-row">
-      <button id="addBtn">Add</button>
-      <button id="clearBtn">Clear all</button>
+      <button id="addBtn">Додати</button>
+      <button id="clearBtn">Очистити все</button>
     </div>
 
     <div id="status"></div>
   </div>
+</div>
 
-  <div id="legend-panel">
+<div id="map-wrap">
+  <div id="map"></div>
+
+  <div id="legend-overlay">
     <div class="legend-heading">
-      <span>Layers</span>
+      <span>Шари</span>
       <span class="count" id="layerCount">0</span>
     </div>
-    <div id="legendEmpty">No layers yet. Add a batch of coordinates above to see it here.</div>
+    <div id="legendEmpty">Ще немає шарів. Додайте координати ліворуч, щоб побачити їх тут.</div>
     <div id="legendList"></div>
   </div>
 </div>
-
-<div id="map"></div>
 
 <script>
 (function () {
 
   // ---------- Color presets ----------
   var COLORS = [
-    { name: 'Red',    hex: '#ff3b30' },
-    { name: 'Orange', hex: '#ff9500' },
-    { name: 'Yellow', hex: '#ffd60a' },
-    { name: 'Green',  hex: '#34d058' },
-    { name: 'Teal',   hex: '#00d3c8' },
-    { name: 'Blue',   hex: '#0a84ff' },
-    { name: 'Purple', hex: '#af52de' },
-    { name: 'Pink',   hex: '#ff375f' },
-    { name: 'White',  hex: '#ffffff' }
+    { name: 'Червоний',     hex: '#ff3b30' },
+    { name: 'Помаранчевий', hex: '#ff9500' },
+    { name: 'Жовтий',       hex: '#ffd60a' },
+    { name: 'Зелений',      hex: '#34d058' },
+    { name: 'Бірюзовий',    hex: '#00d3c8' },
+    { name: 'Синій',        hex: '#0a84ff' },
+    { name: 'Фіолетовий',   hex: '#af52de' },
+    { name: 'Рожевий',      hex: '#ff375f' },
+    { name: 'Білий',        hex: '#ffffff' }
   ];
 
   var colorGrid = document.getElementById('colorGrid');
@@ -575,6 +600,16 @@
   var layerCountEl = document.getElementById('layerCount');
   var statusEl = document.getElementById('status');
 
+  // Ukrainian plural forms: [1, 2-4, 5+] with the 11-14 exception.
+  function pluralUk(n, forms) {
+    var mod10 = n % 10, mod100 = n % 100;
+    if (mod10 === 1 && mod100 !== 11) return forms[0];
+    if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return forms[1];
+    return forms[2];
+  }
+  function pointsWord(n) { return pluralUk(n, ['точка', 'точки', 'точок']); }
+  function lineWord(n) { return pluralUk(n, ['рядок', 'рядки', 'рядків']); }
+
   function showStatus(message, type) {
     statusEl.textContent = message;
     statusEl.className = 'show ' + type;
@@ -605,8 +640,8 @@
 
       var meta = document.createElement('div');
       meta.className = 'legend-meta';
-      meta.textContent = layer.count + (layer.count === 1 ? ' point' : ' points') +
-        (layer.skipped ? '  ·  ' + layer.skipped + ' skipped' : '');
+      meta.textContent = layer.count + ' ' + pointsWord(layer.count) +
+        (layer.skipped ? '  ·  пропущено ' + layer.skipped : '');
 
       body.appendChild(label);
       body.appendChild(meta);
@@ -614,7 +649,7 @@
       var removeBtn = document.createElement('button');
       removeBtn.className = 'legend-remove';
       removeBtn.textContent = '\u00D7';
-      removeBtn.title = 'Remove this layer';
+      removeBtn.title = 'Видалити цей шар';
       removeBtn.addEventListener('click', function () {
         map.removeLayer(layer.group);
         layers = layers.filter(function (l) { return l.id !== layer.id; });
@@ -632,13 +667,13 @@
     var rawLines = coordsInput.value.split(/\r?\n/).map(function (l) { return l.trim(); }).filter(Boolean);
 
     if (rawLines.length === 0) {
-      showStatus('Paste at least one coordinate first.', 'error');
+      showStatus('Спершу вставте хоча б одну координату.', 'error');
       return;
     }
 
     var format = detectBatchFormat(rawLines);
     if (!format) {
-      showStatus('Could not tell if that\u2019s lat/lon or MGRS \u2014 check the formatting and try again.', 'error');
+      showStatus('Не вдалося визначити формат (lat/lon чи MGRS) \u2014 перевірте введені дані.', 'error');
       return;
     }
     var parser = format === 'mgrs' ? parseMgrsLine : parseLatLonLine;
@@ -651,14 +686,14 @@
     });
 
     if (points.length === 0) {
-      showStatus('None of those lines could be parsed as ' + (format === 'mgrs' ? 'MGRS' : 'lat/lon') + '. Check the format and try again.', 'error');
+      showStatus('Жоден рядок не вдалося розпізнати як ' + (format === 'mgrs' ? 'MGRS' : 'lat/lon') + '. Перевірте формат і спробуйте ще раз.', 'error');
       return;
     }
 
     var color = selectedColor;
     var label = document.getElementById('labelInput').value.trim();
     layerIdCounter += 1;
-    if (!label) label = 'Layer ' + layerIdCounter;
+    if (!label) label = 'Шар ' + layerIdCounter;
 
     var group = L.layerGroup();
     points.forEach(function (p) {
@@ -684,9 +719,9 @@
     renderLegend();
 
     if (skipped > 0) {
-      showStatus('Added ' + points.length + (points.length === 1 ? ' point' : ' points') + ' — ' + skipped + ' line' + (skipped === 1 ? '' : 's') + ' skipped (invalid format).', 'warn');
+      showStatus('Додано ' + points.length + ' ' + pointsWord(points.length) + ' \u2014 ' + skipped + ' ' + lineWord(skipped) + ' пропущено (неправильний формат).', 'warn');
     } else {
-      showStatus('Added ' + points.length + (points.length === 1 ? ' point' : ' points') + ' to "' + label + '".', 'ok');
+      showStatus('Додано ' + points.length + ' ' + pointsWord(points.length) + ' до «' + label + '».', 'ok');
     }
 
     coordsInput.value = '';
